@@ -1,0 +1,129 @@
+// ==UserScript==
+// @name       Economic temporaly stuff
+// @namespace  http://use.i.E.your.homepage/
+// @version    0.1
+// @description  enter something useful
+// @require    http://code.jquery.com/jquery-2.1.0.min.js
+// @require    https://gist.githubusercontent.com/BrockA/2625891/raw/fd02ec05e3079cdd52cf5892a7ba27b67b6b6131/waitForKeyElements.js
+// @match	   https://secure.e-conomic.com/secure/default.asp
+// @require	   https://raw.githubusercontent.com/phstc/jquery-dateFormat/master/dist/jquery-dateFormat.min.js
+// @copyright  2014+, Exfridos
+// ==/UserScript==
+
+$(document).ready(function() {
+    runPhase();
+    function runPhase() {
+        waitForContentLoad('.invoice__head__col--customer__customer .invoice__customer', function() {
+            var contentFrame = $('frame#content-frame', window.parent.frames[1].document)[0].contentDocument;
+            
+            
+            
+            // Copy to clipboard
+            var fullName = toTitleCase($('.invoice__head__col--customer__customer div:eq(0)', contentFrame).text());
+            var address  = capitaliseFirstLetter($('.invoice__head__col--customer__customer div:eq(2) span:eq(0)', contentFrame).text());
+            var city     = ($('.invoice__head__col--customer__customer div:eq(2) span:eq(1)', contentFrame).text()).toUpperCase();
+            
+            GM_setClipboard(fullName +"\n"+ address +"\n"+ city);
+            
+            
+            
+            // Change date
+            var curDate = $.format.date(new Date(), 'dd.MM.yy');
+            if (curDate !== $('.invoice__head__col--customer__date p', contentFrame).text()) {
+                var clickEvent  = document.createEvent ("HTMLEvents");
+                clickEvent.initEvent ("click", true, true);
+                $('button.btn.btn-bare.invoice__head__edit-btn.ico-edit', contentFrame)[1].dispatchEvent (clickEvent);
+                
+                waitForContentLoad('.lookup-field.date', function() {
+                    $('.lookup-field.date input').val(curDate);
+                    $('button[type=submit]')[0].dispatchEvent(clickEvent);
+                }, "none");
+            }
+            
+            
+            checkCompany();
+            
+            
+            
+            
+            // Loop
+            waitForContentLoad('h2:contains("Igangværende fakturaer")', function() {
+                runPhase();
+            });
+            
+            // If something submits
+            $('frame#content-frame', window.parent.frames[1].document).load(function(){
+            	checkCompany();
+            });
+        });
+    }
+    
+    function checkCompany() {
+        var contentFrame = $('frame#content-frame', window.parent.frames[1].document)[0].contentDocument;
+        
+    	// Check if it's a company
+        var id = $('.invoice__head__col__top div div:eq(5) span', contentFrame).text();
+        console.log("Sending Request");
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: "http://telecall.dk/administrator/index.php?option=com_redshop&view=order_detail&task=edit&cid[]="+ id,
+            headers: {
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            onload: function(data) {
+                console.log("Recieved response");
+                var dom = (new DOMParser).parseFromString(data.responseText, "text/html");
+                
+                var len = $('td:contains("Firmanavn : ")', dom).length;
+                
+                // If it is a company
+                if (len > 0) {
+                    $('body.table-page', contentFrame).append("<div id='company-warning'>--- FIRMA ---</div>");
+                    $('#company-warning', contentFrame).css({
+                        "position": "absolute",
+                        "left": "104px",
+                        "top": "386px",
+                        "color": "#cc0000",
+                        "letter-spacing": "0.12em",
+                        "font-size": "22px",
+                        "padding-left": "16px"
+                    });
+                }
+            }
+        });
+    }
+   
+    
+    function waitForContentLoad(contentSearch, callbackFunction, frame) {
+        try {
+            if (frame == "none") {
+            	var length = $(contentSearch).length;
+            }
+            else {
+            	var contentFrame = typeof frame !== 'undefined' ? frame : $('frame#content-frame', window.parent.frames[1].document)[0].contentDocument;
+                var length = $(contentSearch, contentFrame).length;
+            }
+            
+            if (length === 0) {
+                setTimeout(function() {waitForContentLoad(contentSearch, callbackFunction, frame);}, 200);
+            }
+            else {
+                callbackFunction();
+            }
+        }
+        catch (err) {
+            setTimeout(function() {waitForContentLoad(contentSearch, callbackFunction, frame);}, 200);
+        }
+    }
+    
+    
+    function toTitleCase(str)
+    {
+        return str.replace(/\w\S*/g, function(txt){return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();});
+    }
+    
+    function capitaliseFirstLetter(string)
+    {
+        return string.charAt(0).toUpperCase() + string.slice(1);
+    }
+});
